@@ -1,0 +1,21 @@
+{
+  "name": "voiden-auto-auth",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automatic, scriptable authentication for Voiden requests",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "zip": "node zip.mjs",
+    "package": "node build.mjs && node zip.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

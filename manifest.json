@@ -1,0 +1,24 @@
+{
+  "id": "auto-auth",
+  "name": "Auto Auth",
+  "description": "Automatic authentication for your requests: your own auth scripts per API, with tokens cached per environment and refreshed when they expire.",
+  "version": "1.0.0",
+  "voidenVersion": ">=2.0.0",
+  "author": "Artur Filatov",
+  "icon": "KeyRound",
+  "type": "community",
+  "priority": 40,
+  "readme": "Map APIs to auth scripts in .voiden-auth/auth.yaml. Before each matching request, Auto Auth runs the script in Node.js when no valid token is cached, adds the returned headers, caches them per environment until they expire, and logs in again after a 401/403. A status bar item shows which service applies to the open request and how long its token lasts.",
+  "mainProcess": true,
+  "permissions": [
+    "settings",
+    "filesystem",
+    "commandPalette",
+    "events"
+  ],
+  "capabilities": {
+    "requestPipeline": {},
+    "commandPalette": {}
+  },
+  "features": []
+}

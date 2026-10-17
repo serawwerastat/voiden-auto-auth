@@ -1,0 +1,40 @@
+# Builds and publishes a GitHub release when a version tag is pushed:
+#   git tag v1.0.0 && git push origin v1.0.0
+# Voiden installs a community plugin from the release tagged v<version>
+# (the version in the registry entry), using these assets.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Check tag matches manifest version
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          test "v$VERSION" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} != manifest v$VERSION"; exit 1; }
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/auto-auth.js
+            dist/auto-auth-main.cjs
+            manifest.json
+            changelog.json

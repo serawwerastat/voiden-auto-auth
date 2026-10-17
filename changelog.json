@@ -1,0 +1,19 @@
+[
+  {
+    "version": "1.0.0",
+    "date": "2026-10-17",
+    "title": "Initial release",
+    "description": "First public release of Auto Auth.",
+    "changes": {
+      "Added": [
+        "Auth config (.voiden-auth/auth.yaml) mapping APIs to auth scripts by URL prefix and/or folder",
+        "Auth scripts run in Node.js, with require() for helper files, project packages and Node modules, and an auth.send() helper with {{variable}} support",
+        "Approval before a script runs, repeated whenever the script or a file next to it changes; enforced in the main process",
+        "Headers cached per project, environment and service until expiry (read from JWTs automatically), with one shared login for parallel requests",
+        "Automatic re-login after a 401 or 403",
+        "Status bar item following the open request, with every service's token state on hover",
+        "Commands: Create example config, Clear cached tokens, Forget allowed scripts"
+      ]
+    }
+  }
+]
