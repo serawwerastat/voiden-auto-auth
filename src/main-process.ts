@@ -13,6 +13,7 @@ import { CHANNELS, type RunRequest } from "./shared/protocol";
 import { runScript, type RunDeps } from "./main/runScript";
 import { TrustStore, type TrustDeps } from "./main/trust";
 import type { Fetch } from "./main/http";
+import { voidenFetch } from "./main/network";
 import type { IpcEvent, MainProcessContext } from "./voiden";
 
 interface ElectronModule {
@@ -42,12 +43,13 @@ export interface MainDeps {
 
 function defaultDeps(): MainDeps {
   const electron = loadElectron();
-  const storeFile = path.join(electron.app?.getPath("userData") ?? process.cwd(), "auto-auth", "trusted-scripts.json");
+  const userData = electron.app?.getPath("userData") ?? process.cwd();
+  const storeFile = path.join(userData, "auto-auth", "trusted-scripts.json");
   return {
-    // Node's fetch, like Voiden's own HTTP requests. (Electron's net.fetch is
-    // not used: Chromium adds an Origin header, which CORS-checking servers
-    // such as Spring reject with "Invalid CORS request".)
-    fetch: (url, init) => fetch(url, init),
+    // undici with Voiden's TLS and proxy settings, like Voiden's own requests.
+    // (Not Electron's net.fetch: Chromium adds an Origin header, which
+    // CORS-checking servers such as Spring reject with "Invalid CORS request".)
+    fetch: voidenFetch(userData),
     trust: {
       store: new TrustStore(storeFile),
       async ask(message, detail) {

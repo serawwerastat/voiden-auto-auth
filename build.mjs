@@ -66,6 +66,8 @@ await build({
   format: "cjs",
   platform: "node",
   target: "node18",
+  minify: true, // mostly undici, including its embedded HTTP parser
+  // undici (Voiden's own HTTP client) is bundled in; Electron is provided by the app.
   external: ["electron"],
   legalComments: "none",
   logLevel: "info",

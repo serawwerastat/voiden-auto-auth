@@ -52,6 +52,7 @@ before(() => {
   write(".voiden-auth/empty.js", "   \n");
   write(".voiden-auth/nothing.js", "auth.log('no return');");
   write(".voiden-auth/logs.js", "auth.log('hello', { n: 1 }, 2); return 'tok';");
+  write(".voiden-auth/fails.js", "auth.log('step 1'); auth.log('step 2'); throw new Error('boom');");
   write(".voiden-auth/slow.js", "await new Promise((r) => setTimeout(r, 1000)); return 'late';");
   write("other/a.js", "return 'a';");
   writeFileSync(path.join(outside, "evil.js"), "return 'evil';");
@@ -101,6 +102,10 @@ test("approval: asked once, again when the script's folder changes, never for a 
   answer = false;
   await assert.rejects(runScript(req("other/a.js"), project, deps()), /running other\/a\.js was not allowed/);
   answer = true;
+});
+
+test("a failing script's error includes what it logged", async () => {
+  await assert.rejects(runScript(req(".voiden-auth/fails.js"), project, deps()), /^Error: boom\nScript log:\n  step 1\n  step 2$/);
 });
 
 test("auth.log lines are returned", async () => {

@@ -1,5 +1,22 @@
 [
   {
+    "version": "1.1.0",
+    "date": "2026-10-29",
+    "title": "Network settings and clearer errors",
+    "description": "auth.send now uses the same network settings as Voiden's own requests, and failures explain themselves.",
+    "changes": {
+      "Added": [
+        "auth.send follows Voiden's \"Disable TLS verification\" setting and active proxy (with excluded domains)",
+        "Errors name any {{variables}} that aren't set in the active environment",
+        "A failing script's last auth.log lines are included in the error",
+        "Clear errors for options written in Postman's pm.sendRequest format (header, body objects)"
+      ],
+      "Fixed": [
+        "Network errors show the real cause (certificate, DNS, refused connection) instead of \"fetch failed\""
+      ]
+    }
+  },
+  {
     "version": "1.0.0",
     "date": "2026-10-17",
     "title": "Initial release",

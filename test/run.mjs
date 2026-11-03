@@ -22,6 +22,8 @@ await build({
   // React is supplied by Voiden at runtime; tests load components but never
   // render them, so a stub is enough.
   alias: { react: "./test/stubs/react.ts", "react/jsx-runtime": "./test/stubs/react.ts" },
+  // Loaded from node_modules at test time (it's bundled only into the release build).
+  external: ["undici"],
   logLevel: "warning",
 });
 

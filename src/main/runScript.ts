@@ -122,10 +122,17 @@ export async function runScript(req: RunRequest, projectPath: string, deps: RunD
   const logs: string[] = [];
   const api = makeAuthApi(req, { ...deps, log: (line) => (logs.push(line), deps.log?.(line)) });
   const fn = new AsyncFunction("auth", "require", "__filename", "__dirname", code);
-  const result = await withTimeout(
-    fn(api, createRequire(scriptPath), scriptPath, path.dirname(scriptPath)),
-    deps.timeoutMs ?? SCRIPT_TIMEOUT_MS,
-    `script ${shown}`,
-  );
-  return { ...normalizeResult(result, req.header), logs };
+  try {
+    const result = await withTimeout(
+      fn(api, createRequire(scriptPath), scriptPath, path.dirname(scriptPath)),
+      deps.timeoutMs ?? SCRIPT_TIMEOUT_MS,
+      `script ${shown}`,
+    );
+    return { ...normalizeResult(result, req.header), logs };
+  } catch (e) {
+    // Include what the script logged, so failures can be understood from the error alone.
+    const message = e instanceof Error ? e.message : String(e);
+    const tail = logs.slice(-5);
+    throw new Error(tail.length ? `${message}\nScript log:\n${tail.map((l) => `  ${l}`).join("\n")}` : message);
+  }
 }

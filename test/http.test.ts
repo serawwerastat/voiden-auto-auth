@@ -83,3 +83,21 @@ test("timeouts are reported", async () => {
     });
   await assert.rejects(send({ url: "{{api_url}}", timeoutMs: 20 }, resolve, hang), /timed out after 20 ms/);
 });
+
+test("Postman-style options are rejected with a pointer to the right option", async () => {
+  await assert.rejects(buildRequest({ url: "{{api_url}}", header: { A: "1" } } as never, resolve), /use `headers`, not `header`/);
+  await assert.rejects(
+    buildRequest({ url: "{{api_url}}", body: { mode: "urlencoded", urlencoded: [] } } as never, resolve),
+    /`body` must be a string — use `form/,
+  );
+  await assert.rejects(buildRequest({ url: "{{api_url}}", data: {} } as never, resolve), /unknown option data/);
+});
+
+test("unset variables are named, wherever they are — even inside a form body", async () => {
+  await assert.rejects(buildRequest({ url: "{{sso_url}}/token" }, resolve), /not set in the active environment: sso_url$/);
+  await assert.rejects(
+    buildRequest({ url: "{{api_url}}/token", form: { username: "{{ph_user}}", password: "{{ph_password}}" } }, resolve),
+    /variables not set in the active environment: ph_user, ph_password$/,
+  );
+  await assert.rejects(buildRequest({ url: "{{api_url}}", json: { a: ["{{nope}}"] } }, resolve), /: nope$/);
+});

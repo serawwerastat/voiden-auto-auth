@@ -149,7 +149,7 @@ Cached results are refreshed a minute before they expire. Tokens that live less 
 | `auth.jwtExpiry(token)` | A JWT's expiry in epoch ms, or `null`. |
 | `auth.request` | `{ url, method, file }` of the request being authorized. |
 | `auth.service` | The rule's `name`. |
-| `auth.log(...)` | Writes a line to Voiden's developer console (Ctrl+Shift+I / Cmd+Option+I), prefixed with the service name. |
+| `auth.log(...)` | Writes a line to Voiden's developer console (Ctrl+Shift+I / Cmd+Option+I), prefixed with the service name. When a script fails, its last log lines are also included in the error. (Voiden's Script Logs panel only shows request scripts.) |
 | `require`, `__filename`, `__dirname` | Standard Node.js, relative to the script file. Use `require` for your own files and packages. `await import("node:…")` also works for built-in modules. |
 
 `auth.send` options:
@@ -168,7 +168,11 @@ Cached results are refreshed a minute before they expire. Tokens that live less 
 
 `{{variables}}` anywhere in these options are filled in from the active environment **before** the body is encoded. A password containing `"`, `\` or `&` is therefore escaped correctly in both JSON and form bodies.
 
-`auth.send` uses Node.js's `fetch`, the same kind of HTTP client Voiden uses for its own requests. It doesn't send an `Origin` header, so servers with CORS checks treat it like any API client. Proxy settings (Voiden's or the system's) don't apply to auth calls.
+`auth.send` follows Voiden's own network settings, like the requests it authorizes:
+- **Disable TLS verification** (in Voiden's Settings; search for "TLS")
+- **the active proxy**, including its excluded domains
+
+It uses the same HTTP client as Voiden (undici), and it doesn't send an `Origin` header, so servers with CORS checks treat it like any API client. Settings changes apply on the next call; no restart needed.
 
 A script that hasn't finished after 60 seconds is abandoned, and the request fails with a message saying so.
 
@@ -228,6 +232,25 @@ const jwt = require("jsonwebtoken");       // from the project's node_modules
 ```
 
 Edited helper files are picked up on the next run, with no restart needed.
+
+## Troubleshooting
+
+**Start with the same request in Voiden itself.** Put the login call in a normal `.void` request and send it. If Voiden can't reach the server, the auth script can't either, and the fix is in Voiden's settings or your network, not the script.
+
+| Error | Meaning |
+|---|---|
+| `variable(s) not set in the active environment: x` | `{{x}}` isn't defined in the active environment. Check its name, and which environment is selected. |
+| `unable to verify the first certificate`, `self-signed certificate`, `unable to get local issuer certificate` | Voiden doesn't trust the server's TLS certificate. This is common with company servers whose certificate chain is incomplete or signed by an internal CA. Either turn on **Disable TLS verification** in Voiden's settings, or keep verification on and give Voiden your company's CA: set the environment variable `NODE_EXTRA_CA_CERTS` to a `.pem` file containing it, then restart Voiden. |
+| `ENOTFOUND`, `ECONNREFUSED`, connect timeout | The host can't be reached. Check the URL, your VPN, and Voiden's proxy setting. |
+| `HTTP 401` / `400` with `invalid_grant`, `invalid_client` | The server was reached and rejected the login. Check the credentials, `client_id` and `grant_type`. |
+| `auth.send: use headers, not header` / `body must be a string` | Options in Postman's `pm.sendRequest` format. Use `headers`, and `form: { key: value }` for form data. |
+
+**Coming from a Postman pre-request script?** Here's what each part becomes:
+- `pm.environment.get("x")` becomes `"{{x}}"` (or `await auth.env("x")`)
+- `body: { mode: "urlencoded", urlencoded: [...] }` becomes `form: { key: value }`
+- `header` becomes `headers`
+- instead of saving the token to a variable, `return { bearer: token }`
+- `console.log` becomes `auth.log`
 
 ## Status bar
 
@@ -296,6 +319,7 @@ If authorization fails, the request is stopped and the reason is shown, rather t
 
 - The status bar reads the request's URL from the **saved** file. Sending always uses the live URL.
 - Voiden gives plugins the request's file only after they run, so `folder` rules go by the request open in the editor. Requests sent from a Stitch run therefore match `folder` rules by the open tab, not their own file. `match` rules are unaffected.
+- Voiden's request timeout setting isn't used; `auth.send` has its own `timeoutMs` (default 30 s).
 - Inside scripts, `{{variables}}` come from the active environment. Folder-level `.env` files, a newer Voiden feature, apply when rules are matched, but not inside scripts.
 - Auth is added to requests sent through Voiden's HTTP pipeline. WebSocket and gRPC connections aren't covered yet.
 - The 60-second limit can't stop code that blocks Node.js completely (for example an endless `while` loop). That would freeze Voiden until it's closed.

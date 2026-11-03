@@ -2,7 +2,7 @@
   "id": "auto-auth",
   "name": "Auto Auth",
   "description": "Automatic authentication for your requests: your own auth scripts per API, with tokens cached per environment and refreshed when they expire.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "voidenVersion": ">=2.0.0",
   "author": "Artur Filatov",
   "icon": "KeyRound",
