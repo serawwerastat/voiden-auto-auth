@@ -1,5 +1,30 @@
 [
   {
+    "version": "1.2.0",
+    "date": "2026-11-25",
+    "title": "See what you approve; scripts in their own thread",
+    "description": "The approval dialog shows the script, after its first run a script can only load the files you approved, and scripts can no longer hang or close Voiden.",
+    "changes": {
+      "Added": [
+        "The approval dialog shows the first lines of the script and has an \"Open script\" button, which opens it in the editor before you decide",
+        "Approvals now also cover every file a script loads with require() outside its folder: helpers elsewhere in the project and packages in node_modules. They join the approval on the script's first run",
+        "From then on, every file is checked against the approval at the moment the script loads it. A changed file, or a different file taking an approved one's place, stops the script before that file runs, and you're asked about it by name",
+        "When asked again, the dialog lists the files that changed"
+      ],
+      "Changed": [
+        "Each script runs in its own worker thread. A script that hangs is really stopped after 60 seconds, and process.exit() or a crash in a script no longer affects Voiden",
+        "Scripts must be in a folder (such as .voiden-auth/), not directly in the project root",
+        "Symbolic links in a script's folder are part of the approval",
+        "You'll be asked once to allow each script again after updating: approvals are stored in a new format"
+      ],
+      "Fixed": [
+        "A script folder with too many files gives advice instead of a bare error",
+        "Services sharing one script no longer open one approval dialog each",
+        "A folder whose name starts with two dots is no longer taken for a path outside the project"
+      ]
+    }
+  },
+  {
     "version": "1.1.0",
     "date": "2026-10-29",
     "title": "Network settings and clearer errors",

@@ -2,21 +2,19 @@
  * Auto Auth — main-process part (Node.js).
  *
  * Voiden loads this bundle in Electron's main process. It runs auth scripts
- * with full Node.js available — after the user has approved them — and
- * returns the headers to add. Matching, caching and UI live in the renderer
- * part, src/plugin.ts.
+ * with full Node.js available — after the user has approved them, each in
+ * its own worker thread — and returns the headers to add. Matching, caching
+ * and UI live in the renderer part, src/plugin.ts.
  */
 
 import path from "node:path";
 
-import { CHANNELS, type RunRequest } from "./shared/protocol";
-import { runScript, type RunDeps } from "./main/runScript";
-import { TrustStore, type TrustDeps } from "./main/trust";
-import type { Fetch } from "./main/http";
-import { voidenFetch } from "./main/network";
+import { CHANNELS, type RunRequest, type RunResponse } from "./shared/protocol";
+import { runScript } from "./main/runScript";
+import { ReviewRequested, TrustStore, type Answer, type TrustDeps } from "./main/trust";
 import type { IpcEvent, MainProcessContext } from "./voiden";
 
-interface ElectronModule {
+export interface ElectronModule {
   app?: { getPath(name: "userData"): string };
   dialog?: {
     showMessageBox(
@@ -37,34 +35,44 @@ function loadElectron(): ElectronModule {
 
 /** Overridable for tests. */
 export interface MainDeps {
-  fetch: Fetch;
+  /** Voiden's user data folder: its network settings, and this plugin's approvals. */
+  userDataDir: string;
   trust: TrustDeps;
+}
+
+/** The dialog's buttons, in order, and the answer each one gives. */
+const BUTTONS: [label: string, answer: Answer][] = [
+  ["Allow", "allow"],
+  ["Open script", "open"], // shows it in Voiden's editor; see src/engine.ts
+  ["Cancel", "deny"],
+];
+
+/** Asks with a native dialog. Anything but a click on "Allow" or "Open script" declines. */
+export function askWithDialog(electron: ElectronModule): TrustDeps["ask"] {
+  return async (message, detail) => {
+    if (!electron.dialog) return "deny";
+    const cancel = BUTTONS.length - 1;
+    const { response } = await electron.dialog.showMessageBox(electron.BrowserWindow?.getFocusedWindow() ?? null, {
+      type: "warning",
+      buttons: BUTTONS.map(([label]) => label),
+      defaultId: cancel,
+      cancelId: cancel,
+      message,
+      detail,
+      noLink: true,
+    });
+    return BUTTONS[response]?.[1] ?? "deny";
+  };
 }
 
 function defaultDeps(): MainDeps {
   const electron = loadElectron();
   const userData = electron.app?.getPath("userData") ?? process.cwd();
-  const storeFile = path.join(userData, "auto-auth", "trusted-scripts.json");
   return {
-    // undici with Voiden's TLS and proxy settings, like Voiden's own requests.
-    // (Not Electron's net.fetch: Chromium adds an Origin header, which
-    // CORS-checking servers such as Spring reject with "Invalid CORS request".)
-    fetch: voidenFetch(userData),
+    userDataDir: userData,
     trust: {
-      store: new TrustStore(storeFile),
-      async ask(message, detail) {
-        if (!electron.dialog) return false;
-        const { response } = await electron.dialog.showMessageBox(electron.BrowserWindow?.getFocusedWindow() ?? null, {
-          type: "warning",
-          buttons: ["Allow", "Cancel"],
-          defaultId: 1,
-          cancelId: 1,
-          message,
-          detail,
-          noLink: true,
-        });
-        return response === 0;
-      },
+      store: new TrustStore(path.join(userData, "auto-auth", "trusted-scripts.json")),
+      ask: askWithDialog(electron),
     },
   };
 }
@@ -72,15 +80,21 @@ function defaultDeps(): MainDeps {
 export default function createAutoAuthMain(context: MainProcessContext, deps: MainDeps = defaultDeps()) {
   return {
     async onload() {
-      context.ipc.handle(CHANNELS.run, async (event: IpcEvent, req: RunRequest) => {
+      context.ipc.handle(CHANNELS.run, async (event: IpcEvent, req: RunRequest): Promise<RunResponse> => {
         const projectPath = await context.project.getActive(event);
         if (!projectPath) throw new Error("no project is open");
-        const runDeps: RunDeps = {
-          resolve: (text) => context.env.replaceVariables(text, event),
-          fetch: deps.fetch,
-          trust: deps.trust,
-        };
-        return runScript(req, projectPath, runDeps);
+        try {
+          return await runScript(req, projectPath, {
+            resolve: (text) => context.env.replaceVariables(text, event),
+            trust: deps.trust,
+            userDataDir: deps.userDataDir,
+          });
+        } catch (e) {
+          // Not a failure: the user asked to read the script first. The
+          // renderer opens it in the editor.
+          if (e instanceof ReviewRequested) return { review: e.script };
+          throw e;
+        }
       });
       context.ipc.handle(CHANNELS.forgetTrust, () => deps.trust.store.clear());
     },

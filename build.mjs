@@ -2,7 +2,8 @@
 /**
  * Builds the two bundles Voiden loads:
  *   dist/<id>.js        renderer part (ES module) — hooks, status bar, commands
- *   dist/<id>-main.cjs  main-process part (Node.js) — runs the auth scripts
+ *   dist/<id>-main.cjs  main-process part (Node.js) — runs the auth scripts;
+ *                       contains the script worker's source (build/workerSource.mjs)
  *
  * Voiden provides React and a few other libraries to plugins at runtime on
  * `window.__voiden_shims__`, so the plugin must use those shared instances
@@ -17,6 +18,8 @@
  */
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
+
+import { workerSource } from "./build/workerSource.mjs";
 
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
 const HOST_MODULES = ["react", "react/jsx-runtime", "react-dom", "lucide-react", "yaml"];
@@ -66,8 +69,9 @@ await build({
   format: "cjs",
   platform: "node",
   target: "node18",
-  minify: true, // mostly undici, including its embedded HTTP parser
-  // undici (Voiden's own HTTP client) is bundled in; Electron is provided by the app.
+  minify: true,
+  plugins: [workerSource],
+  // Electron is provided by the app.
   external: ["electron"],
   legalComments: "none",
   logLevel: "info",

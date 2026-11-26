@@ -28,3 +28,10 @@ export interface AuthResult {
   /** Lines the script wrote with auth.log(), shown in the developer console. */
   logs?: string[];
 }
+
+/**
+ * Answer to a run request: the headers, or — when the user chose "Open
+ * script" in the approval dialog — the script to show them (path relative to
+ * the project root). Nothing was run in that case.
+ */
+export type RunResponse = AuthResult | { review: string };

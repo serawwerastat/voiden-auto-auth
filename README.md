@@ -76,7 +76,7 @@ Voiden's **Advanced Authentication** plugin covers standard schemes: Bearer, Bas
 2. Open the command palette and run **Auto Auth: Create example config**. It creates `.voiden-auth/auth.yaml` and `.voiden-auth/my-api.js`, with comments explaining every option.
 3. Change the example to match your API: the URL variable in `auth.yaml`, and the login call and the response field holding the token in the script.
 4. Make sure the variables the script uses (`api_url`, `api_user`, `api_password` in the example) exist in your environments. Keep passwords in the **private** environment file.
-5. Send a request. Voiden asks you to allow the script (see [Security](#security)), then a toast confirms the login, and the status bar shows `my-api` with how long the token lasts.
+5. Send a request. Voiden shows you the start of the script and asks you to allow it (see [Security](#security)), then a toast confirms the login, and the status bar shows `my-api` with how long the token lasts.
 
 The `.voiden-auth/` folder belongs in Git, so your team shares the same setup, while each person keeps their own credentials in their private environment. It sits outside `.voiden/` on purpose: Voiden keeps `.voiden/` out of Git.
 
@@ -111,7 +111,7 @@ services:
 | `name` | yes | Label for the status bar and messages. Also identifies the cached token. |
 | `match` | one of these two | The request URL must start with this. `{{variables}}` are filled in from the active environment. A rule whose variable isn't set in the current environment doesn't match. |
 | `folder` | one of these two | The request's `.void` file must be in this folder (relative to the project root). |
-| `script` | yes | Path of the auth script, relative to the project root. |
+| `script` | yes | Path of the auth script, relative to the project root. It must be in a folder (`.voiden-auth/` is a good one), not directly in the project root, because allowing a script covers its whole folder. |
 | `header` | no | Header used for `bearer` and `token` results. Default `Authorization`. |
 | `enabled` | no | `false` to switch the rule off. |
 
@@ -121,7 +121,7 @@ Requests that match no rule are sent unchanged. The config file's location can b
 
 ## Auth scripts
 
-A script is the body of an async function running in **Node.js** (Voiden's main process). It can use `await` and `require(...)` freely: helper files next to it, your project's `node_modules`, and Node's built-in modules.
+A script is the body of an async function running in **Node.js**, in a worker thread of its own inside Voiden. It can use `await` and `require(...)` freely: helper files, your project's `node_modules`, and Node's built-in modules. Each run starts fresh, so edits to a script or its helpers apply on the next login, without a restart.
 
 ### What a script returns
 
@@ -174,7 +174,7 @@ Cached results are refreshed a minute before they expire. Tokens that live less 
 
 It uses the same HTTP client as Voiden (undici), and it doesn't send an `Origin` header, so servers with CORS checks treat it like any API client. Settings changes apply on the next call; no restart needed.
 
-A script that hasn't finished after 60 seconds is abandoned, and the request fails with a message saying so.
+A script that hasn't finished after 60 seconds is stopped, and the request fails with a message saying so. Because each script has its own thread, this also works for a script that is stuck in a loop, and a script calling `process.exit()` ends only itself, not Voiden. An error nothing catches, including a rejected promise nobody awaits, fails the run.
 
 ### Examples
 
@@ -287,13 +287,47 @@ Under **Settings → Auto Auth**:
 
 Auth scripts run with full Node.js access: files, network and processes. The project folder they come from may be someone else's repository. Auto Auth therefore treats them like code you're about to run.
 
-- **Scripts need your approval.** Before a script runs, Voiden shows a dialog asking you to allow it. The approval covers the script **and every other file in its folder**, such as helpers it requires, as they are at that moment. If anything there changes, for example after a `git pull`, you're asked again. Packages in `node_modules` aren't part of the approval; treat them like any dependency you install.
-- **The check happens in Node.js**, in Voiden's main process, right before the script runs. Nothing on the UI side can skip it. Approvals are stored on your machine, and **Auto Auth: Forget allowed scripts** resets them.
+### You approve scripts before they run
+
+Before a script runs for the first time, Voiden shows a dialog with the script's path and its first lines:
+
+- **Allow** runs it.
+- **Open script** opens it in Voiden's editor and stops the request, so you can read all of it. Send the request again to get back to the dialog.
+- **Cancel** stops the request.
+
+An approval is tied to file contents (SHA-256 hashes), and covers:
+
+| | |
+|---|---|
+| The script and **every file in its folder** | Including subfolders; `node_modules` and `.git` excepted. Compared before every run, whether or not the script uses the file. |
+| **Every other file the script loads with `require()`** | Helpers elsewhere in the project (`require("../shared/sign")`), packages in `node_modules` together with their `package.json`, and whatever those load in turn. They join the approval on the script's first run after you allow it. |
+
+After that first run, the script can only load what the approval holds:
+
+- **Before each run**, the covered files are compared with what is on disk. If one has changed, appeared or disappeared, for example after a `git pull` or an `npm install`, you're asked again, and the dialog lists which. Allowing covers those changes and nothing else.
+- **During the run, every file is checked at the moment `require()` loads it**, against the same hashes. A file that changed in the meantime, or a file the approval doesn't hold, stops the script before any of that file runs, and you're asked about it by name. This also catches a *different* file being loaded in place of an approved one, such as a package whose entry point was repointed, or a package placed closer to the script.
+
+What an approval does **not** cover:
+
+- **Files the script loads for the first time on a run where that is allowed.** That is the first run after you allow a script, and the run after you allow a file it "wants to load": the dialog names the file the script was stopped at, and whatever else it loads for the first time on that run is accepted with it. You see the start of the script in the dialog, not the helpers and packages it goes on to load. Use **Open script** and read what it requires if the project isn't yours.
+- **Files a script uses without `require()`**: read with `fs`, run as a separate process, or loaded in a worker thread the script (or a package) starts itself. Files read with `fs` are still compared before each run if they are in the script's folder (outside `node_modules`, `.git` and linked folders), so keep them there.
+- **ES modules on older Voiden versions.** Files an ES module imports, and `import()` of a file, are checked like `require()` where Voiden's Node.js is 22.15 or later, which includes current versions. On older ones only `require()` is checked.
+
+Because an approval covers the script's whole folder, keep auth scripts in a folder of their own, such as `.voiden-auth/`. A script directly in the project root is refused, since its folder would be the whole project. So is a script whose folder holds more than 2,000 files. Other files in the same folder, the config file included, are part of the approval: changing them asks again. A symbolic link in the folder counts as where it points plus the content of the file there; a linked folder isn't walked, but what the script loads from it is checked like any other file.
+
+The check happens in Node.js, in Voiden's main process and the script's own thread. Nothing on the UI side can skip it. Approvals are stored on your machine, outside the project, so everyone who opens a shared project approves its scripts themselves. **Auto Auth: Forget allowed scripts** resets them.
+
+### Scripts are contained where they can be
+
 - **Only scripts inside the project can run.** Symlinks pointing outside the project are refused.
+- **Each run has its own worker thread**, which is stopped when the script finishes or after 60 seconds. A script that hangs, crashes or calls `process.exit()` can't freeze or close Voiden.
+- This is not a sandbox. An approved script can do anything Node.js can, including undoing these checks for itself. The approval is what protects you; the checks make sure that what runs is what you approved.
+
+### Credentials
+
 - **Credentials stay in environment variables.** Scripts reference them as `{{variables}}`, so secrets can live in Voiden's private environment file, which is excluded from Git. Don't hard-code them in scripts.
 - **Error messages show URLs as written** (`{{api_url}}/login`), not with their values filled in. A failed login's error includes up to 200 characters of the server's response.
-
-Cached headers are kept in Voiden's local storage on your machine, per project, environment and service.
+- Cached headers are kept in Voiden's local storage on your machine, per project, environment and service.
 
 ## How it works
 
@@ -305,8 +339,11 @@ send request
    │                          cached & fresh? ── yes → add headers
    │                                     │ no
    │                          IPC → main process (Node.js)
-   │                                ├─ approved? (ask if not, or if the folder changed)
-   │                                └─ run script → { headers, expiresAt }
+   │                                ├─ approved? (ask if not, or if a covered file changed)
+   │                                ├─ run script in a worker thread → { headers, expiresAt }
+   │                                │     every require() is checked against the approval;
+   │                                │     an unknown or changed file stops the run → ask → start over
+   │                                └─ first run: add the files it loaded to the approval
    │                                     │
    │                          cache per environment → add headers
    ▼
@@ -318,11 +355,17 @@ If authorization fails, the request is stopped and the reason is shown, rather t
 ## Limitations
 
 - The status bar reads the request's URL from the **saved** file. Sending always uses the live URL.
-- Voiden gives plugins the request's file only after they run, so `folder` rules go by the request open in the editor. Requests sent from a Stitch run therefore match `folder` rules by the open tab, not their own file. `match` rules are unaffected.
+- Voiden currently gives plugins the request's file only after they run, so `folder` rules go by the request open in the editor. Requests sent from a Stitch run therefore match `folder` rules by the open tab, not their own file. `match` rules are unaffected. Auto Auth already uses the request's own file when Voiden provides it, so this goes away with the Voiden release that does.
 - Voiden's request timeout setting isn't used; `auth.send` has its own `timeoutMs` (default 30 s).
 - Inside scripts, `{{variables}}` come from the active environment. Folder-level `.env` files, a newer Voiden feature, apply when rules are matched, but not inside scripts.
 - Auth is added to requests sent through Voiden's HTTP pipeline. WebSocket and gRPC connections aren't covered yet.
-- The 60-second limit can't stop code that blocks Node.js completely (for example an endless `while` loop). That would freeze Voiden until it's closed.
+- Scripts run in a worker thread. There, Electron's own APIs (`require("electron")`) and `process.chdir()` aren't available, changes to `process.env` stay inside the script, and native add-ons must support worker threads (most current ones do).
+- Stopping a script after 60 seconds stops its thread. A script waiting inside a synchronous system call, such as `execSync`, stops when that call returns, and processes the script started keep running.
+- `import()` inside a script doesn't resolve relative to the script, so it's only practical for Node's built-in modules. Use `require()` for files and packages; it also loads ES modules on current Voiden versions.
+- A library that loads parts of itself only when needed (for example on an error path) can trigger the "wants to load a file you haven't allowed yet" question later on. Allow it once and that file is covered too.
+- When a script is stopped at a file and you allow it, the script **starts over from the beginning**. Anything it did before the stop happens again, which matters for logins that use a one-time code or a refresh token that changes on use. The 60 seconds apply to each start.
+- A script can't `require()` a file that is different on every run, such as a state file it writes itself: the file would never match the approval, and the request fails with a message saying so. Read and write such files with `fs`.
+- Runs of the same script take turns, so services that share one script log in one after another.
 
 ## Permissions
 
@@ -332,7 +375,7 @@ If authorization fails, the request is stopped and the reason is shown, rather t
 | `settings` | The Enabled and Config file settings |
 | `commandPalette` | The commands above |
 | `events` | Updating the status bar on tab, file, environment and project changes |
-| main process | Running auth scripts in Node.js |
+| main process | Asking for approval and running auth scripts in Node.js |
 
 Some things plugins can't do through the plugin context, so the UI side also uses Voiden's `window.electron` bridge for them:
 - reading the open request file
@@ -362,7 +405,12 @@ npm run package     # dist/auto-auth.js, dist/auto-auth-main.cjs, dist/auto-auth
 | `src/config.ts` | Config parsing and URL/folder matching |
 | `src/cache.ts` | Cached headers per project, environment and service |
 | `src/status.ts`, `src/StatusWidget.tsx` | Status bar state and widget |
-| `src/main-process.ts`, `src/main/` | Node.js part: approval, script runner, `auth.send` |
+| `src/main-process.ts` | Node.js entry: IPC handlers, the approval dialog |
+| `src/main/trust.ts` | Approvals: file hashes, what changed, the dialog's text |
+| `src/main/runScript.ts` | Script runner: where the script is, approval, starting and stopping its worker |
+| `src/main/worker.ts` | The worker thread a script runs in; checks each loaded file against the approval |
+| `src/main/scriptApi.ts`, `src/main/http.ts`, `src/main/network.ts` | The `auth` object, `auth.send`, Voiden's TLS and proxy settings |
+| `build/workerSource.mjs` | Bundles the worker into the main-process file |
 | `src/shared/` | Types and helpers used by both parts |
 
 Releases are built by GitHub Actions when a `v*` tag is pushed. The tag must match the version in `manifest.json`.

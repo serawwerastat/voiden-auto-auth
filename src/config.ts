@@ -5,7 +5,7 @@
  *     - name: my-api
  *       match: "{{api_url}}"            # requests whose URL starts with this
  *       folder: Some/Folder             # …and/or whose file is in this folder
- *       script: .voiden-auth/my-api.js
+ *       script: .voiden-auth/my-api.js  # in a folder, not the project root
  *       header: Authorization           # optional
  *       enabled: true                   # optional
  *
@@ -41,11 +41,16 @@ export function parseConfig(text: string, parseYaml: (text: string) => unknown):
     const name = String(s.name ?? `service${i + 1}`);
     if (!s.script) throw new Error(`service "${name}" has no script`);
     if (!s.match && !s.folder) throw new Error(`service "${name}" needs a match or a folder`);
+    const script = trimSlashes(toForwardSlashes(String(s.script)));
+    // Approving a script covers its whole folder, which must not be the whole project.
+    if (!script.includes("/")) {
+      throw new Error(`service "${name}": put the script in a folder, for example .voiden-auth/${script} — not in the project root`);
+    }
     return {
       name,
       match: s.match ? String(s.match) : "",
       folder: s.folder ? trimSlashes(toForwardSlashes(String(s.folder))) : "",
-      script: trimSlashes(toForwardSlashes(String(s.script))),
+      script,
       header: s.header ? String(s.header) : DEFAULT_HEADER,
       enabled: s.enabled !== false,
     };

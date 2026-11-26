@@ -12,7 +12,7 @@
 import manifest from "../manifest.json";
 import { headersTag } from "./cache";
 import type { ServiceRule } from "./config";
-import { AuthEngine } from "./engine";
+import { AuthEngine, ScriptOpenedForReview } from "./engine";
 import { DEFAULT_CONFIG_PATH, getActiveFile, hostModule, invokeMain, readAbsolute, toast } from "./host";
 import { CHANNELS, fullChannel } from "./shared/protocol";
 import { status } from "./status";
@@ -86,7 +86,7 @@ export default function createAutoAuthPlugin(context: PluginContext): Plugin {
       };
     } catch (e) {
       const message = `Auto Auth (${matched.rule.name}): ${errorMessage(e)}`;
-      toast(context, message, "error");
+      toast(context, message, e instanceof ScriptOpenedForReview ? "info" : "error");
       stopRequest(requestState, message);
     } finally {
       void refreshStatus();

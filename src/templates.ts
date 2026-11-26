@@ -15,8 +15,9 @@ export const EXAMPLE_CONFIG = `# Auto Auth — which script authorizes which req
 #   match:   requests whose URL starts with this ({{variables}} allowed)
 #   folder:  requests whose .void file is inside this folder (relative to the project)
 #            (set both to require both)
-#   script:  the auth script, relative to the project root
-#            (keep scripts in this folder: approval covers each script's folder)
+#   script:  the auth script, relative to the project root. It must be in a
+#            folder, and this one is a good place: allowing a script covers
+#            every file in its folder.
 #   header:  optional — header used for bearer/token results (default: Authorization)
 #   enabled: optional — set to false to switch a rule off
 
@@ -49,8 +50,9 @@ export const EXAMPLE_SCRIPT = `// Auth script for "my-api".
 //   require("./helper")        files next to this script, your project's packages,
 //                              and Node.js modules ("node:crypto", …)
 //
-// The first time this script runs — and whenever it or a file next to it
-// changes — Voiden asks you to allow it.
+// The first time this script runs — and whenever it, a file next to it, or a
+// file it loads with require() changes — Voiden asks you to allow it.
+// It runs in a thread of its own, and is stopped after 60 seconds.
 
 const res = await auth.send({
   method: "POST",

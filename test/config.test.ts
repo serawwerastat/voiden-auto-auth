@@ -22,14 +22,20 @@ test("parses services with defaults", () => {
 });
 
 test("accepts a bare list and an empty file", () => {
-  assert.equal(parseConfig(JSON.stringify([{ name: "a", match: "x", script: "a.js" }]), yaml).length, 1);
+  assert.equal(parseConfig(JSON.stringify([{ name: "a", match: "x", script: "auth/a.js" }]), yaml).length, 1);
   assert.deepEqual(parseConfig("  \n", yaml), []);
 });
 
 test("rejects rules that can't work", () => {
   assert.throws(() => parseConfig(JSON.stringify({ services: {} }), yaml), /must be a list/);
   assert.throws(() => parseConfig(JSON.stringify([{ name: "a", match: "x" }]), yaml), /"a" has no script/);
-  assert.throws(() => parseConfig(JSON.stringify([{ name: "a", script: "a.js" }]), yaml), /needs a match or a folder/);
+  assert.throws(() => parseConfig(JSON.stringify([{ name: "a", script: "auth/a.js" }]), yaml), /needs a match or a folder/);
+  for (const script of ["a.js", "./a.js", ".\\a.js"]) {
+    assert.throws(
+      () => parseConfig(JSON.stringify([{ name: "a", match: "x", script }]), yaml),
+      /service "a": put the script in a folder, for example \.voiden-auth\/a\.js — not in the project root/,
+    );
+  }
 });
 
 test("urlStartsWith matches path, query and fragment boundaries only", () => {
@@ -50,10 +56,10 @@ test("fileInFolder", () => {
 test("pickService: first match wins; folder and URL must both match when both set", async () => {
   const rules = parseConfig(
     JSON.stringify([
-      { name: "admin", folder: "admin", match: "{{api_url}}", script: "a.js" },
-      { name: "api", match: "{{api_url}}", script: "b.js" },
-      { name: "off", match: "{{api_url}}", script: "c.js", enabled: false },
-      { name: "staging-only", match: "{{staging_url}}", script: "d.js" },
+      { name: "admin", folder: "admin", match: "{{api_url}}", script: "auth/a.js" },
+      { name: "api", match: "{{api_url}}", script: "auth/b.js" },
+      { name: "off", match: "{{api_url}}", script: "auth/c.js", enabled: false },
+      { name: "staging-only", match: "{{staging_url}}", script: "auth/d.js" },
     ]),
     yaml,
   );

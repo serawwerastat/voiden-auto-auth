@@ -2,7 +2,7 @@ import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 
 import createPlugin from "../src/plugin";
-import { CHANNELS, fullChannel, type AuthResult, type RunRequest } from "../src/shared/protocol";
+import { CHANNELS, fullChannel, type AuthResult, type RunRequest, type RunResponse } from "../src/shared/protocol";
 import { status, statusBarLabel, statusTooltip } from "../src/status";
 import type { PluginContext, RequestState } from "../src/voiden";
 
@@ -16,7 +16,8 @@ const settings = new Map<string, unknown>();
 const toasts: string[] = [];
 const runs: RunRequest[] = [];
 const forgotTrust: number[] = [];
-let mainResponse: (req: RunRequest) => Promise<AuthResult>;
+const opened: string[] = [];
+let mainResponse: (req: RunRequest) => Promise<RunResponse>;
 let activeFile: string | undefined;
 let activeEnv = "dev";
 let ipcAvailable = true;
@@ -73,7 +74,7 @@ const context = {
     exists: async (p: string) => files.has(p),
     createDirectory: async () => {},
   },
-  project: { getPath: async () => PROJECT, openFile: async () => {} },
+  project: { getPath: async () => PROJECT, openFile: async (p: string) => void opened.push(p) },
   events: { on: (event: string, fn: () => void) => ((listeners[event] = fn), () => delete listeners[event]) },
   registerCommand: (c: { id: string; action: () => Promise<void> }) => void (commands[c.id] = c.action),
   registerStatusBarItem: (item: { onClick: () => void }) => void (statusBarClick = item.onClick),
@@ -111,6 +112,7 @@ beforeEach(() => {
   settings.clear();
   toasts.length = 0;
   runs.length = 0;
+  opened.length = 0;
   forgotTrust.length = 0;
   activeFile = undefined;
   activeEnv = "dev";
@@ -221,6 +223,34 @@ test("a declined script stops the request", async () => {
     throw new Error("Error invoking remote method 'ext:auto-auth:run': Error: running .voiden-auth/my-api.js was not allowed");
   };
   assert.equal((await send("{{api_url}}/x")).metadata.preScriptError, "Auto Auth (my-api): running .voiden-auth/my-api.js was not allowed");
+});
+
+test("'Open script' in the approval dialog opens it in the editor; the next send asks again", async () => {
+  withConfig();
+  mainResponse = async () => ({ review: ".voiden-auth/my-api.js" });
+  const rs = await send("{{api_url}}/x");
+  assert.deepEqual(opened, [".voiden-auth/my-api.js"]);
+  assert.equal(
+    rs.metadata.preScriptError,
+    "Auto Auth (my-api): .voiden-auth/my-api.js is open for you to review. Send the request again to allow it.",
+  );
+  assert.deepEqual(rs.headers, [], "nothing is sent without credentials");
+  assert.ok(toasts.some((t) => t.startsWith("info: Auto Auth (my-api)")), "not shown as an error");
+  assert.equal(
+    statusBarLabel({ ...status.get(), focus: { kind: "service", name: "my-api" } }).text,
+    "my-api · not logged in",
+    "not shown as failed",
+  );
+
+  mainResponse = async () => ok();
+  assert.deepEqual(authHeader(await send("{{api_url}}/x")), ["Bearer tok"]);
+  assert.equal(runs.length, 2);
+});
+
+test("a script in the project root is a config error", async () => {
+  files.set(".voiden-auth/auth.yaml", JSON.stringify([{ name: "a", match: "{{api_url}}", script: "login.js" }]));
+  assert.match(String((await send("{{api_url}}/x")).metadata.preScriptError), /put the script in a folder, for example \.voiden-auth\/login\.js/);
+  assert.equal(runs.length, 0);
 });
 
 test("a missing main-process part asks for a restart", async () => {

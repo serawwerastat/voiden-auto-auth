@@ -18,7 +18,7 @@ import {
   toast,
 } from "./host";
 import { joinPath, relativeTo } from "./shared/paths";
-import { CHANNELS, fullChannel, type AuthResult, type RunRequest } from "./shared/protocol";
+import { CHANNELS, fullChannel, type RunRequest, type RunResponse } from "./shared/protocol";
 import { status } from "./status";
 import type { PluginContext } from "./voiden";
 
@@ -27,6 +27,16 @@ export interface RequestInfo {
   method?: string;
   /** Absolute path of the request's .void file, when known. */
   filePath?: string;
+}
+
+/**
+ * The user chose "Open script" in the approval dialog: nothing ran, and the
+ * script is now open in the editor for them to read.
+ */
+export class ScriptOpenedForReview extends Error {
+  constructor(script: string) {
+    super(`${script} is open for you to review. Send the request again to allow it.`);
+  }
 }
 
 export class AuthEngine {
@@ -107,7 +117,12 @@ export class AuthEngine {
 
     status.setEvent(rule.name, "pending");
     try {
-      const result = await invokeMain<AuthResult>(fullChannel(CHANNELS.run), payload);
+      const result = await invokeMain<RunResponse>(fullChannel(CHANNELS.run), payload);
+      if ("review" in result) {
+        status.clearEvent(rule.name);
+        await this.context.project.openFile(result.review).catch(() => {});
+        throw new ScriptOpenedForReview(result.review);
+      }
       for (const line of result.logs ?? []) console.log(`[Auto Auth:${rule.name}]`, line);
 
       if (!result.cache) {
@@ -119,6 +134,7 @@ export class AuthEngine {
       toast(this.context, `Auto Auth: ${rule.name} authorized`, "success");
       return entry;
     } catch (e) {
+      if (e instanceof ScriptOpenedForReview) throw e;
       const message = e instanceof Error ? e.message : String(e);
       status.setEvent(rule.name, "failed", message);
       throw new Error(message);

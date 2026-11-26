@@ -1,23 +1,26 @@
 /** Shared test helpers for the main-process side. */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { TrustStore, type TrustDeps } from "../src/main/trust";
+import { TrustStore, type Answer, type TrustDeps } from "../src/main/trust";
 
+/** A new temporary folder (its real path, as macOS's /tmp is a symlink). */
 export function tempDir(prefix: string): string {
-  return mkdtempSync(path.join(tmpdir(), prefix));
+  return realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
 }
 
-/** Trust deps that record questions and answer with `answer()`. */
-export function fakeTrust(dir: string, answer: () => boolean = () => true) {
+/** Trust deps that record each question and answer with `answer()`. */
+export function fakeTrust(dir: string, answer: () => Answer = () => "allow") {
   const asked: string[] = [];
+  const details: string[] = [];
   const deps: TrustDeps = {
     store: new TrustStore(path.join(dir, "trusted.json")),
-    ask: async (message) => {
+    ask: async (message, detail) => {
       asked.push(message);
+      details.push(detail);
       return answer();
     },
   };
-  return { deps, asked };
+  return { deps, asked, details };
 }
